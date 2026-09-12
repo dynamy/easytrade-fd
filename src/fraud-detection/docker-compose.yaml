@@ -1,0 +1,98 @@
+name: easytrade-fraud-detection
+
+# Run with EasyTrade already up:
+#   docker compose -f docker-compose.yaml up -d
+#
+# The fraud-detection service connects to the EasyTrade proxy via EASYTRADE_BASE_URL.
+# Set EASYTRADE_BASE_URL to the host running EasyTrade (defaults to http://frontendreverseproxy
+# if on the same Docker network, or http://host.docker.internal for local dev).
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-file: "5"
+    max-size: "10m"
+
+services:
+
+  # -------------------------------------------------------------------------
+  # Kafka (KRaft mode — no Zookeeper required)
+  # -------------------------------------------------------------------------
+  kafka:
+    image: bitnami/kafka:3.9
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      KAFKA_CFG_NODE_ID: "0"
+      KAFKA_CFG_PROCESS_ROLES: controller,broker
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 0@kafka:9093
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    ports:
+      # External port for local Kafka clients (kafka-console-consumer, kcat, etc.)
+      - "9094:9094"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    volumes:
+      - kafka-data:/bitnami/kafka
+
+  # -------------------------------------------------------------------------
+  # Kafka UI — browse topics and messages at http://localhost:8080
+  # -------------------------------------------------------------------------
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: easytrade-fraud
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+
+  # -------------------------------------------------------------------------
+  # Fraud Detection Service
+  # -------------------------------------------------------------------------
+  fraud-detection:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8095:8095"
+    environment:
+      # Point this at your running EasyTrade nginx proxy.
+      # Use host.docker.internal to reach the host machine if EasyTrade
+      # is running via docker compose on the same host.
+      EASYTRADE_BASE_URL: ${EASYTRADE_BASE_URL:-http://host.docker.internal}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_FRAUD_ALERTS_TOPIC: easytrade.fraud.alerts
+      FRAUD_DETECTION_INTERVAL_MS: "60000"
+      FRAUD_ALERT_COOLDOWN_MINUTES: "30"
+      WASH_TRADING_WINDOW_MINUTES: "60"
+      MAX_TRADES_PER_HOUR: "10"
+      LARGE_TRANSACTION_MULTIPLIER: "3.0"
+      UNUSUAL_HOURS_START: "0"
+      UNUSUAL_HOURS_END: "4"
+      PRICE_DEVIATION_MAX_PERCENT: "10.0"
+      MAX_OPEN_LONG_POSITIONS: "5"
+    extra_hosts:
+      # Allows the container to reach services on the Docker host
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  kafka-data:

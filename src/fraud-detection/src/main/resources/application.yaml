@@ -1,0 +1,50 @@
+server:
+  port: 8095
+
+spring:
+  application:
+    name: fraud-detection
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+      properties:
+        "[spring.json.add.type.headers]": false
+        "[delivery.timeout.ms]": 30000
+        "[linger.ms]": 5
+        "[batch.size]": 16384
+
+easytrade:
+  base-url: ${EASYTRADE_BASE_URL:http://localhost}
+
+fraud:
+  detection:
+    interval-ms: ${FRAUD_DETECTION_INTERVAL_MS:60000}
+    alert-cooldown-minutes: ${FRAUD_ALERT_COOLDOWN_MINUTES:30}
+  rules:
+    wash-trading:
+      window-minutes: ${WASH_TRADING_WINDOW_MINUTES:60}
+    velocity:
+      max-trades-per-hour: ${MAX_TRADES_PER_HOUR:10}
+    large-transaction:
+      threshold-multiplier: ${LARGE_TRANSACTION_MULTIPLIER:3.0}
+    unusual-hours:
+      utc-start-hour: ${UNUSUAL_HOURS_START:0}
+      utc-end-hour: ${UNUSUAL_HOURS_END:4}
+    price-deviation:
+      max-percent: ${PRICE_DEVIATION_MAX_PERCENT:10.0}
+    long-position:
+      max-open-per-instrument: ${MAX_OPEN_LONG_POSITIONS:5}
+
+kafka:
+  topic:
+    fraud-alerts: ${KAFKA_FRAUD_ALERTS_TOPIC:easytrade.fraud.alerts}
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
