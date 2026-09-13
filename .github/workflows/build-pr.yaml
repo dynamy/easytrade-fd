@@ -14,15 +14,6 @@ env:
   HELM_CHART_PATH: helm/easytrade
 
 jobs:
-  snyk:
-    uses: ./.github/workflows/reusable-snyk.yaml
-    permissions:
-      security-events: write
-      contents: read
-      actions: read
-    secrets:
-      SNYK_API_TOKEN: ${{ secrets.SNYK_API_TOKEN }}
-
   calc-version:
     uses: ./.github/workflows/reusable-calc-version.yaml
 
